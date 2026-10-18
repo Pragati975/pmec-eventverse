@@ -2,6 +2,7 @@ import { Heart, Github, Twitter, Instagram, Linkedin, Mail, Send } from "lucide-
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const socialLinks = [
   { icon: Twitter,   href: "#", label: "Twitter" },
@@ -21,10 +22,12 @@ const quickLinks = [
 export const Footer = () => {
   const [email, setEmail] = useState("");
 
-  const handleSubscribe = (e: React.FormEvent) => {
+  const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
-    toast.success("Subscribed! You'll get event updates.");
+    const { error } = await supabase.from("subscribers").insert({ email });
+    if (error && error.code !== "23505") { toast.error("Could not subscribe. Please try again."); return; }
+    toast.success(error ? "You're already subscribed!" : "Subscribed! You'll get event updates.");
     setEmail("");
   };
 
@@ -115,7 +118,7 @@ export const Footer = () => {
 
         <div className="border-t border-border/50 pt-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground flex items-center gap-1">
-            &copy; 2025 Parala Maharaja Engineering College. Made with <Heart size={13} className="text-destructive fill-current" /> for students.
+            &copy; {new Date().getFullYear()} Parala Maharaja Engineering College. Made with <Heart size={13} className="text-destructive fill-current" /> for students.
           </p>
           <p className="text-xs text-muted-foreground/50 font-display tracking-widest uppercase">
             PMEC EventVerse v2.0

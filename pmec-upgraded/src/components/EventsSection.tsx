@@ -1,16 +1,23 @@
 import { useState, useRef, useEffect } from "react";
 import { Calendar, Clock, MapPin, Users, Timer } from "lucide-react";
 import { motion } from "framer-motion";
+import { supabase } from "@/integrations/supabase/client";
 import { EventRegistrationModal } from "./EventRegistrationModal";
 
-const upcomingEvents = [
-  { title:"Tech Symposium 2025", date:"2025-08-15", time:"10:00 AM", location:"Main Auditorium", attendees:"500+", totalSeats:500, seatsLeft:120, description:"Annual technical symposium featuring industry experts and innovative projects.", category:"Technical", gradient:"hsl(263,70%,8%), hsl(187,94%,10%)", icon:"💻", prize:"₹30,000" },
-  { title:"Cultural Fest", date:"2025-09-22", time:"6:00 PM", location:"Open Ground", attendees:"1000+", totalSeats:1000, seatsLeft:300, description:"Celebrate diversity through dance, music, and cultural performances.", category:"Cultural", gradient:"hsl(300,70%,8%), hsl(263,70%,10%)", icon:"🎭", prize:"₹25,000" },
-  { title:"Hackathon 2025", date:"2025-10-05", time:"9:00 AM", location:"Computer Lab", attendees:"200+", totalSeats:200, seatsLeft:30, description:"48-hour coding marathon to solve real-world problems.", category:"Technical", gradient:"hsl(187,94%,5%), hsl(210,80%,10%)", icon:"⚙️", prize:"₹1,50,000" },
-  { title:"Sports Meet", date:"2025-11-10", time:"8:00 AM", location:"Sports Ground", attendees:"800+", totalSeats:800, seatsLeft:200, description:"Annual inter-departmental sports competition with multiple disciplines.", category:"Sports", gradient:"hsl(40,80%,8%), hsl(20,70%,10%)", icon:"⚽", prize:"₹20,000" },
-  { title:"AI Workshop", date:"2025-08-28", time:"2:00 PM", location:"Seminar Hall", attendees:"150+", totalSeats:150, seatsLeft:40, description:"Hands-on workshop covering machine learning and deep learning fundamentals.", category:"Workshop", gradient:"hsl(187,90%,6%), hsl(160,70%,8%)", icon:"🤖", prize:"₹10,000" },
-  { title:"Dance Competition", date:"2025-09-30", time:"5:00 PM", location:"Auditorium", attendees:"600+", totalSeats:600, seatsLeft:90, description:"Inter-college dance competition with solo and group categories.", category:"Cultural", gradient:"hsl(320,70%,8%), hsl(280,60%,10%)", icon:"💃", prize:"₹15,000" },
-];
+type EventRow = {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  event_date: string;
+  event_time: string;
+  location: string;
+  prize: string;
+  total_seats: number;
+  seats_left: number;
+  icon: string;
+  gradient: string;
+};
 
 const categories = ["All","Technical","Cultural","Sports","Workshop"];
 
@@ -34,19 +41,19 @@ const Countdown = ({ targetDate }: { targetDate: string }) => {
 };
 
 const SeatsBar = ({ total, left }: { total:number; left:number }) => {
-  const filled = Math.round(((total - left) / total) * 100);
+  const filled = total > 0 ? Math.round(((total - left) / total) * 100) : 0;
   const colorClass = left < total*0.2 ? "from-red-500 to-orange-500" : left < total*0.5 ? "from-amber-500 to-yellow-400" : "from-primary to-secondary";
   return (
     <div className="mt-2">
       <div className="seats-bar"><div className={`seats-fill bg-gradient-to-r ${colorClass}`} style={{ width:`${filled}%` }} /></div>
       <p className={`text-xs mt-1 ${left < total*0.2 ? "text-red-400" : "text-muted-foreground"}`}>
-        {left} seats remaining{left < total*0.2 ? " — Almost full!" : ""}
+        {left === 0 ? "Sold out" : `${left} seats remaining${left < total*0.2 ? " — Almost full!" : ""}`}
       </p>
     </div>
   );
 };
 
-const EventCard = ({ event, index, onRegister }: { event: typeof upcomingEvents[0]; index: number; onRegister: (title: string) => void }) => {
+const EventCard = ({ event, index, onRegister }: { event: EventRow; index: number; onRegister: (id: string, title: string) => void }) => {
   const cardRef = useRef<HTMLDivElement>(null);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -83,7 +90,7 @@ const EventCard = ({ event, index, onRegister }: { event: typeof upcomingEvents[
             {event.category}
           </span>
         </div>
-        <div className="absolute top-3 right-3"><Countdown targetDate={event.date} /></div>
+        <div className="absolute top-3 right-3"><Countdown targetDate={event.event_date} /></div>
         <div className="absolute bottom-3 right-3">
           <span className="text-xs font-bold font-display text-amber-300 tracking-wider">{event.prize}</span>
         </div>
@@ -93,17 +100,18 @@ const EventCard = ({ event, index, onRegister }: { event: typeof upcomingEvents[
         <h3 className="text-lg font-bold text-foreground mb-2 font-display">{event.title}</h3>
         <p className="text-muted-foreground text-sm mb-4 line-clamp-2 leading-relaxed">{event.description}</p>
         <div className="space-y-1.5 mb-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2"><Calendar size={13} className="text-primary flex-shrink-0" /><span>{event.date}</span></div>
-          <div className="flex items-center gap-2"><Clock size={13} className="text-primary flex-shrink-0" /><span>{event.time}</span></div>
+          <div className="flex items-center gap-2"><Calendar size={13} className="text-primary flex-shrink-0" /><span>{event.event_date}</span></div>
+          <div className="flex items-center gap-2"><Clock size={13} className="text-primary flex-shrink-0" /><span>{event.event_time}</span></div>
           <div className="flex items-center gap-2"><MapPin size={13} className="text-primary flex-shrink-0" /><span>{event.location}</span></div>
-          <div className="flex items-center gap-2"><Users size={13} className="text-secondary flex-shrink-0" /><span>{event.attendees} expected</span></div>
+          <div className="flex items-center gap-2"><Users size={13} className="text-secondary flex-shrink-0" /><span>{event.total_seats} seats</span></div>
         </div>
-        <SeatsBar total={event.totalSeats} left={event.seatsLeft} />
+        <SeatsBar total={event.total_seats} left={event.seats_left} />
         <button
-          onClick={() => onRegister(event.title)}
-          className="btn-angular w-full py-3 mt-4 bg-gradient-to-r from-primary to-secondary text-primary-foreground font-bold text-xs tracking-widest uppercase hover:opacity-90 transition-all hover:shadow-[0_8px_25px_hsl(263,70%,55%,0.3)] font-display"
+          onClick={() => onRegister(event.id, event.title)}
+          disabled={event.seats_left === 0}
+          className="btn-angular w-full py-3 mt-4 bg-gradient-to-r from-primary to-secondary text-primary-foreground font-bold text-xs tracking-widest uppercase hover:opacity-90 transition-all hover:shadow-[0_8px_25px_hsl(263,70%,55%,0.3)] font-display disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Register Now →
+          {event.seats_left === 0 ? "Event Full" : "Register Now →"}
         </button>
       </div>
     </motion.div>
@@ -111,13 +119,24 @@ const EventCard = ({ event, index, onRegister }: { event: typeof upcomingEvents[
 };
 
 export const EventsSection = () => {
-  const [selectedEvent, setSelectedEvent] = useState("");
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState({ id: "", title: "" });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState("All");
 
+  const loadEvents = async () => {
+    const { data, error } = await supabase.from("events").select("*").order("event_date");
+    if (error) console.error("Failed to load events:", error.message);
+    setEvents((data as EventRow[]) ?? []);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadEvents(); }, []);
+
   const filteredEvents = activeCategory === "All"
-    ? upcomingEvents
-    : upcomingEvents.filter(e => e.category === activeCategory);
+    ? events
+    : events.filter(e => e.category === activeCategory);
 
   return (
     <section id="events" className="py-24 bg-background relative">
@@ -145,17 +164,29 @@ export const EventsSection = () => {
           ))}
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredEvents.map((event, index) => (
-            <EventCard key={event.title} event={event} index={index} onRegister={(title) => { setSelectedEvent(title); setIsModalOpen(true); }} />
-          ))}
-        </div>
+        {loading ? (
+          <p className="text-center text-muted-foreground">Loading events...</p>
+        ) : filteredEvents.length === 0 ? (
+          <p className="text-center text-muted-foreground">No events found.</p>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredEvents.map((event, index) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                index={index}
+                onRegister={(id, title) => { setSelectedEvent({ id, title }); setIsModalOpen(true); }}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <EventRegistrationModal
         isOpen={isModalOpen}
-        onClose={() => { setIsModalOpen(false); setSelectedEvent(""); }}
-        eventTitle={selectedEvent}
+        onClose={() => { setIsModalOpen(false); setSelectedEvent({ id: "", title: "" }); loadEvents(); }}
+        eventId={selectedEvent.id}
+        eventTitle={selectedEvent.title}
       />
     </section>
   );

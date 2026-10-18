@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Mail, Phone, MapPin, Send, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export const ContactSection = () => {
   const [formData, setFormData] = useState({ name: "", email: "", subject: "", message: "" });
@@ -10,10 +11,14 @@ export const ContactSection = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSending(true);
-    await new Promise(r => setTimeout(r, 800));
+    const { error } = await supabase.from("messages").insert({
+      name: formData.name, email: formData.email,
+      subject: formData.subject, message: formData.message,
+    });
+    setSending(false);
+    if (error) { toast.error("Could not send message. Please try again."); return; }
     toast.success("Message sent! We'll get back to you soon.");
     setFormData({ name: "", email: "", subject: "", message: "" });
-    setSending(false);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {

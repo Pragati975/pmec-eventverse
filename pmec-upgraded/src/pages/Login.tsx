@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { toast } from "sonner";
 import { LogIn, Eye, EyeOff, Rocket, Trophy, Users } from "lucide-react";
 import { motion } from "framer-motion";
@@ -24,11 +23,11 @@ const Login = () => {
   };
 
   const handleGoogleLogin = async () => {
-    const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-    if (result.error) { toast.error(result.error.message); return; }
-    if (result.redirected) return;
-    toast.success("Welcome back!");
-    navigate("/dashboard");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/dashboard` },
+    });
+    if (error) toast.error(error.message);   // on success the browser redirects to Google
   };
 
   const inputClass = "w-full px-4 py-3 bg-muted/30 border border-border text-foreground focus:ring-1 focus:ring-secondary focus:border-secondary transition-all outline-none placeholder:text-muted-foreground/40 text-sm rounded-none";

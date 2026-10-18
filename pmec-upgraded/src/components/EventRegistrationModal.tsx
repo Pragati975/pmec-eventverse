@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -10,34 +9,56 @@ import { useNavigate } from "react-router-dom";
 interface EventRegistrationModalProps {
   isOpen: boolean;
   onClose: () => void;
+  eventId: string;
   eventTitle: string;
 }
 
-export const EventRegistrationModal = ({ isOpen, onClose, eventTitle }: EventRegistrationModalProps) => {
+export const EventRegistrationModal = ({ isOpen, onClose, eventId, eventTitle }: EventRegistrationModalProps) => {
   const [user, setUser] = useState<any>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: "", email: "", registrationNumber: "", phone: "", year: "", branch: ""
   });
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (!isOpen) return;
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        setFormData(prev => ({ ...prev, email: session.user.email || "" }));
+      if (!session) {
+        toast.error("Please login to register for events");
+        onClose();
+        navigate("/login");
+        return;
       }
+      setUser(session.user);
+      setFormData(prev => ({ ...prev, email: session.user.email || "" }));
     });
   }, [isOpen]);
 
-  if (!user && isOpen) {
-    toast.error("Please login to register for events");
-    onClose();
-    navigate("/login");
-    return null;
-  }
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+
+    const { error } = await supabase.rpc("register_for_event", {
+      p_event: eventId,
+      p_reg: formData.registrationNumber,
+      p_phone: formData.phone,
+      p_year: formData.year,
+      p_branch: formData.branch,
+    });
+
+    setSubmitting(false);
+
+    if (error) {
+      toast.error(
+        error.message.includes("duplicate") ? "You're already registered for this event"
+        : error.message.includes("full") ? "Sorry, this event is full"
+        : error.message
+      );
+      return;
+    }
+
     confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
     toast.success(`Successfully registered for ${eventTitle}!`);
     setFormData({ name: "", email: "", registrationNumber: "", phone: "", year: "", branch: "" });
@@ -97,8 +118,8 @@ export const EventRegistrationModal = ({ isOpen, onClose, eventTitle }: EventReg
               </select>
             </div>
           </div>
-          <Button type="submit" className="w-full bg-gradient-to-r from-primary to-secondary hover:scale-[1.02] transition-all text-primary-foreground">
-            Register Now
+          <Button type="submit" disabled={submitting} className="w-full bg-gradient-to-r from-primary to-secondary hover:scale-[1.02] transition-all text-primary-foreground">
+            {submitting ? "Registering..." : "Register Now"}
           </Button>
         </form>
       </DialogContent>

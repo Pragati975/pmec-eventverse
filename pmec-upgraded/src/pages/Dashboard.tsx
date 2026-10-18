@@ -5,11 +5,18 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { User, Calendar, LogOut, Award, Clock, CheckCircle2, Circle } from "lucide-react";
 
 const Dashboard = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<any>(null);
+  const [registrations, setRegistrations] = useState<any[]>([]);
+  const [upcomingCount, setUpcomingCount] = useState(0);
+  const [editOpen, setEditOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ full_name: "", branch: "", year: "", phone: "" });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -23,6 +30,42 @@ const Dashboard = () => {
     });
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  // Load profile + registrations + upcoming count once we know the user
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("profiles").select("*").eq("id", user.id).maybeSingle()
+      .then(({ data }) => setProfile(data));
+    supabase.from("registrations")
+      .select("id, created_at, events(title, event_date, event_time, location, category, icon)")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setRegistrations(data ?? []));
+    supabase.from("events").select("id", { count: "exact", head: true })
+      .gte("event_date", new Date().toISOString().slice(0, 10))
+      .then(({ count }) => setUpcomingCount(count ?? 0));
+  }, [user]);
+
+  const openEdit = () => {
+    setForm({
+      full_name: profile?.full_name || user?.user_metadata?.full_name || "",
+      branch: profile?.branch || user?.user_metadata?.branch || "",
+      year: profile?.year || user?.user_metadata?.year || "",
+      phone: profile?.phone || user?.user_metadata?.phone || "",
+    });
+    setEditOpen(true);
+  };
+
+  const saveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    const row = { id: user.id, ...form };
+    const { error } = await supabase.from("profiles").upsert(row);
+    setSaving(false);
+    if (error) { toast.error("Could not save profile: " + error.message); return; }
+    setProfile(row);
+    setEditOpen(false);
+    toast.success("Profile updated!");
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -41,14 +84,16 @@ const Dashboard = () => {
     );
   }
 
-  const userName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Student";
+  // Prefer the profiles table; fall back to sign-up metadata (e.g. Google users)
+  const info = (f: string) => profile?.[f] || user?.user_metadata?.[f];
+  const userName = info("full_name") || user?.user_metadata?.name || user?.email?.split("@")[0] || "Student";
   const avatarUrl = user?.user_metadata?.avatar_url;
-  const branch = user?.user_metadata?.branch;
-  const year = user?.user_metadata?.year;
+  const branch = info("branch");
+  const year = info("year");
 
   // Profile completion
   const fields = ["full_name", "branch", "year", "phone"];
-  const filled = fields.filter(f => user?.user_metadata?.[f]).length;
+  const filled = fields.filter(f => info(f)).length;
   const profilePct = Math.round((filled / fields.length) * 100);
 
   return (
@@ -106,11 +151,11 @@ const Dashboard = () => {
                 <div className="mt-3 space-y-1.5">
                   {fields.map(f => (
                     <div key={f} className="flex items-center gap-2 text-xs">
-                      {user?.user_metadata?.[f]
+                      {info(f)
                         ? <CheckCircle2 size={12} className="text-secondary" />
                         : <Circle size={12} className="text-muted-foreground" />
                       }
-                      <span className={user?.user_metadata?.[f] ? "text-foreground/70" : "text-muted-foreground"}>
+                      <span className={info(f) ? "text-foreground/70" : "text-muted-foreground"}>
                         {f === "full_name" ? "Full name" : f.charAt(0).toUpperCase() + f.slice(1)}
                       </span>
                     </div>
@@ -123,9 +168,9 @@ const Dashboard = () => {
           {/* Stats cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             {[
-              { icon: Calendar, label: "Registered Events", value: "0", color: "text-primary" },
+              { icon: Calendar, label: "Registered Events", value: String(registrations.length), color: "text-primary" },
               { icon: Award,    label: "Certificates Earned", value: "0", color: "text-secondary" },
-              { icon: Clock,    label: "Upcoming Events",     value: "6", color: "text-amber-400" },
+              { icon: Clock,    label: "Upcoming Events",     value: String(upcomingCount), color: "text-amber-400" },
               { icon: User,     label: "Club Memberships",    value: "0", color: "text-pink-400" },
             ].map((s) => (
               <div key={s.label} className="dash-card glass border border-border/50 p-5">
@@ -140,28 +185,48 @@ const Dashboard = () => {
           <div className="glass border border-border/50 p-8 mb-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-black font-display">My Registrations</h2>
-              <button onClick={() => document.getElementById("events")?.scrollIntoView({ behavior: "smooth" })}
+              <button onClick={() => navigate("/#events")}
                 className="btn-angular text-xs px-4 py-2 border border-secondary/40 text-secondary hover:bg-secondary/10 transition-all font-display tracking-widest uppercase"
               >
                 Browse Events
               </button>
             </div>
-            <div className="flex flex-col items-center justify-center py-10 text-center">
-              <div className="w-16 h-16 flex items-center justify-center mb-4"
-                style={{ background: "hsl(263,70%,55%,0.1)", clipPath: "polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)" }}
-              >
-                <Calendar size={28} className="text-primary" />
+            {registrations.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <div className="w-16 h-16 flex items-center justify-center mb-4"
+                  style={{ background: "hsl(263,70%,55%,0.1)", clipPath: "polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)" }}
+                >
+                  <Calendar size={28} className="text-primary" />
+                </div>
+                <p className="text-foreground font-bold mb-1 font-display">No registrations yet</p>
+                <p className="text-muted-foreground text-sm max-w-xs">
+                  Register for events to see them here.
+                </p>
               </div>
-              <p className="text-foreground font-bold mb-1 font-display">No registrations yet</p>
-              <p className="text-muted-foreground text-sm max-w-xs">
-                Register for events to see them here. Over 40 events are waiting for you!
-              </p>
-            </div>
+            ) : (
+              <div className="space-y-3">
+                {registrations.map(r => (
+                  <div key={r.id} className="flex items-center gap-4 p-4 border border-border/50 bg-muted/20">
+                    <span className="text-3xl">{r.events?.icon ?? "🎟️"}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-foreground font-display truncate">{r.events?.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {r.events?.event_date} · {r.events?.event_time} · {r.events?.location}
+                      </p>
+                    </div>
+                    <span className="px-3 py-1 text-xs font-bold font-display tracking-widest uppercase text-secondary"
+                      style={{ background: "hsl(187,94%,43%,0.1)", clipPath: "polygon(6px 0%,100% 0%,calc(100% - 6px) 100%,0% 100%)" }}>
+                      Registered
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Actions */}
           <div className="grid md:grid-cols-2 gap-4">
-            <div className="dash-card glass border border-border/50 p-6 cursor-pointer">
+            <div className="dash-card glass border border-border/50 p-6 cursor-pointer" onClick={openEdit}>
               <User size={26} className="text-secondary mb-3" />
               <h3 className="text-base font-bold text-foreground mb-1 font-display">Edit Profile</h3>
               <p className="text-muted-foreground text-sm">Update your personal info and preferences.</p>
@@ -175,6 +240,50 @@ const Dashboard = () => {
 
         </motion.div>
       </div>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-md bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-foreground font-display">Edit Profile</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={saveProfile} className="space-y-4">
+            {[
+              { name: "full_name", label: "Full Name", type: "text" },
+              { name: "phone", label: "Phone", type: "tel" },
+            ].map(f => (
+              <div key={f.name}>
+                <label className="block text-xs font-display font-bold text-foreground/70 mb-2 tracking-widest uppercase">{f.label}</label>
+                <input type={f.type} value={(form as any)[f.name]} required
+                  onChange={e => setForm({ ...form, [f.name]: e.target.value })}
+                  className="w-full px-4 py-3 bg-muted/30 border border-border text-foreground text-sm outline-none focus:ring-1 focus:ring-secondary" />
+              </div>
+            ))}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-display font-bold text-foreground/70 mb-2 tracking-widest uppercase">Branch</label>
+                <select value={form.branch} required onChange={e => setForm({ ...form, branch: e.target.value })}
+                  className="w-full px-4 py-3 bg-muted/30 border border-border text-foreground text-sm outline-none focus:ring-1 focus:ring-secondary">
+                  <option value="">Select</option>
+                  {["CSE", "ECE", "EEE", "MECH", "CIVIL", "IT"].map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-display font-bold text-foreground/70 mb-2 tracking-widest uppercase">Year</label>
+                <select value={form.year} required onChange={e => setForm({ ...form, year: e.target.value })}
+                  className="w-full px-4 py-3 bg-muted/30 border border-border text-foreground text-sm outline-none focus:ring-1 focus:ring-secondary">
+                  <option value="">Select</option>
+                  {["1st", "2nd", "3rd", "4th"].map(y => <option key={y} value={y}>{y} Year</option>)}
+                </select>
+              </div>
+            </div>
+            <button type="submit" disabled={saving}
+              className="btn-angular w-full py-3 bg-gradient-to-r from-primary to-secondary text-primary-foreground font-bold text-xs tracking-widest uppercase disabled:opacity-60 font-display">
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <Footer />
     </div>
   );

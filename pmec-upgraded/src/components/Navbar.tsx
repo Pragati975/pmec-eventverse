@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Menu, X, LogIn, UserPlus } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -9,6 +9,7 @@ export const Navbar = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null));
@@ -23,8 +24,9 @@ export const Navbar = () => {
   }, []);
 
   const scrollTo = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
     setIsMobileMenuOpen(false);
+    if (pathname !== "/") { navigate(`/#${id}`); return; }   // go home, Index scrolls to the section
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   };
 
   const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
